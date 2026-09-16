@@ -20,7 +20,7 @@ threshold = 10e-9  # 10 nT
 distances = np.logspace(
     np.log10(0.05),
     np.log10(10.0),
-    150
+    200
 )
 
 moments = np.logspace(
@@ -29,24 +29,52 @@ moments = np.logspace(
     150
 )
 
-# Dipole orientation: +z
-moment_direction = np.array([0.0, 0.0, 1.0])
+angles = np.linspace(0, 90, 91)
 
 
 # --------------------------------------------------
-# Sweep
+# Helper
 # --------------------------------------------------
 
-detectable = np.zeros(
-    (len(moments), len(distances)),
+def moment_vector(magnitude, angle_deg):
+    """
+    Create a dipole moment rotated from +z toward +x.
+
+    angle = 0 deg  -> +z
+    angle = 90 deg -> +x
+    """
+
+    theta = np.deg2rad(angle_deg)
+
+    return magnitude * np.array([
+        np.sin(theta),
+        0.0,
+        np.cos(theta)
+    ])
+
+
+# --------------------------------------------------
+# Orientation sweep
+# Fixed moment, vary orientation and distance
+# --------------------------------------------------
+
+test_moment = 1.0  # A*m^2
+
+max_bz_orientation = np.zeros(
+    (len(angles), len(distances))
+)
+
+detectable_orientation = np.zeros(
+    (len(angles), len(distances)),
     dtype=bool
 )
 
-max_bz = np.zeros_like(detectable, dtype=float)
+for i, angle in enumerate(angles):
 
-for i, moment_magnitude in enumerate(moments):
-
-    moment = moment_magnitude * moment_direction
+    moment = moment_vector(
+        test_moment,
+        angle
+    )
 
     for j, distance in enumerate(distances):
 
@@ -62,40 +90,60 @@ for i, moment_magnitude in enumerate(moments):
             moment
         )
 
-        bz = np.abs(B[:, 2]) # Check all sensors in the array (not just center)
+        max_bz = np.max(np.abs(B[:, 2]))
 
-        max_bz[i, j] = np.max(bz)
+        max_bz_orientation[i, j] = max_bz
 
-        detectable[i, j] = np.max(bz) >= threshold
+        detectable_orientation[i, j] = (
+            max_bz >= threshold
+        )
 
 
 # --------------------------------------------------
-# Plot detectability
+# Find maximum detectable distance
+# --------------------------------------------------
+
+max_detectable_distance = np.full(
+    len(angles),
+    np.nan
+)
+
+for i, angle in enumerate(angles):
+
+    detectable_distances = distances[
+        detectable_orientation[i]
+    ]
+
+    if len(detectable_distances) > 0:
+        max_detectable_distance[i] = np.max(
+            detectable_distances
+        )
+
+
+# --------------------------------------------------
+# Plot 1: Detection range vs orientation
 # --------------------------------------------------
 
 plt.figure(figsize=(9, 6))
 
-plt.pcolormesh(
-    distances,
-    moments,
-    detectable,
-    shading="auto"
+plt.plot(
+    angles,
+    max_detectable_distance
 )
 
-plt.xscale("log")
-plt.yscale("log")
-
-plt.xlabel("Source distance (m)")
-plt.ylabel("Dipole moment (A·m²)")
-plt.title("Magnetic Sensor Operating Range")
-
-plt.colorbar(
-    label="Detectable"
+plt.xlabel("Dipole orientation from +z (degrees)")
+plt.ylabel("Maximum detectable distance (m)")
+plt.title(
+    f"Detection Range vs Dipole Orientation "
+    f"(m = {test_moment} A·m²)"
 )
+
+plt.grid(True)
 
 plt.tight_layout()
+
 plt.savefig(
-    "operating_range.png",
+    "orientation_detection_range.png",
     dpi=300
 )
 
@@ -103,33 +151,61 @@ plt.show()
 
 
 # --------------------------------------------------
-# Plot maximum Bz
+# Plot 2: Field relative to detection threshold
 # --------------------------------------------------
+
+field_ratio = max_bz_orientation / threshold
 
 plt.figure(figsize=(9, 6))
 
 plt.pcolormesh(
     distances,
-    moments,
-    max_bz * 1e9,
+    angles,
+    np.log10(field_ratio),
     shading="auto"
 )
 
 plt.xscale("log")
-plt.yscale("log")
 
 plt.xlabel("Source distance (m)")
-plt.ylabel("Dipole moment (A·m²)")
-plt.title("Maximum |Bz| Across Sensor Array")
+plt.ylabel("Dipole orientation from +z (degrees)")
+plt.title(
+    f"Maximum |Bz| Relative to Detection Threshold "
+    f"(m = {test_moment} A·m²)"
+)
 
 plt.colorbar(
-    label="|Bz| (nT)"
+    label=r"$\log_{10}(|B_z| / B_{\mathrm{threshold}})$"
+)
+
+plt.axhline(
+    0,
+    linestyle="--"
 )
 
 plt.tight_layout()
+
 plt.savefig(
-    "operating_range_field.png",
+    "orientation_field_ratio.png",
     dpi=300
 )
 
 plt.show()
+
+
+# --------------------------------------------------
+# Print selected values
+# --------------------------------------------------
+
+print("\nMaximum detectable distance:")
+
+for angle in [0, 15, 30, 45, 60, 75, 90]:
+
+    index = np.argmin(
+        np.abs(angles - angle)
+    )
+
+    print(
+        f"{angle:>3} deg: "
+        f"{max_detectable_distance[index]:.3f} m"
+    )
