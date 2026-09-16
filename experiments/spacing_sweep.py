@@ -5,7 +5,11 @@ from src.dipole import dipole_field
 from src.array import create_planar_array
 
 
-threshold = 10e-9  # 10 nT
+# --------------------------------------------------
+# Configuration
+# --------------------------------------------------
+
+threshold = 10e-9       # 10 nT
 moment_magnitude = 1.0  # A*m^2
 
 spacings = np.logspace(
@@ -14,16 +18,103 @@ spacings = np.logspace(
     100
 )
 
+# Coarse grid used only to find the outer threshold crossing
 distances = np.logspace(
     np.log10(0.05),
     np.log10(20.0),
-    400
+    500
 )
 
 orientations = {
     "Vertical (0°)": np.array([0.0, 0.0, 1.0]),
     "Horizontal (90°)": np.array([1.0, 0.0, 0.0]),
 }
+
+
+# --------------------------------------------------
+# Calculate maximum |Bz| for one configuration
+# --------------------------------------------------
+
+def max_bz_at_distance(sensor_positions, distance, moment):
+    source_position = np.array([
+        0.0,
+        0.0,
+        distance
+    ])
+
+    B = dipole_field(
+        sensor_positions,
+        source_position,
+        moment
+    )
+
+    return np.max(np.abs(B[:, 2]))
+
+
+# --------------------------------------------------
+# Find outermost detection boundary
+# --------------------------------------------------
+
+def find_detection_range(sensor_positions, moment):
+    """
+    Find the outermost distance at which max |Bz|
+    reaches the detection threshold.
+
+    A coarse logarithmic sweep identifies the final
+    detectable/undetectable transition, then bisection
+    refines the threshold crossing.
+    """
+
+    fields = np.array([
+        max_bz_at_distance(
+            sensor_positions,
+            distance,
+            moment
+        )
+        for distance in distances
+    ])
+
+    detectable = fields >= threshold
+
+    # Find transitions from detectable -> undetectable
+    transitions = np.where(
+        detectable[:-1] & ~detectable[1:]
+    )[0]
+
+    if len(transitions) == 0:
+        return np.nan
+
+    # Use the OUTERMOST transition
+    i = transitions[-1]
+
+    low = distances[i]
+    high = distances[i + 1]
+
+    # --------------------------------------------------
+    # Bisection
+    # --------------------------------------------------
+
+    for _ in range(60):
+
+        mid = 0.5 * (low + high)
+
+        field = max_bz_at_distance(
+            sensor_positions,
+            mid,
+            moment
+        )
+
+        if field >= threshold:
+            low = mid
+        else:
+            high = mid
+
+    return 0.5 * (low + high)
+
+
+# --------------------------------------------------
+# Sweep spacing and orientation
+# --------------------------------------------------
 
 results = {
     name: []
@@ -43,33 +134,14 @@ for spacing in spacings:
 
         moment = moment_magnitude * direction
 
-        detectable_distances = []
+        detection_range = find_detection_range(
+            sensor_positions,
+            moment
+        )
 
-        for distance in distances:
-
-            source_position = np.array([
-                0.0,
-                0.0,
-                distance
-            ])
-
-            B = dipole_field(
-                sensor_positions,
-                source_position,
-                moment
-            )
-
-            max_bz = np.max(np.abs(B[:, 2]))
-
-            if max_bz >= threshold:
-                detectable_distances.append(distance)
-
-        if detectable_distances:
-            results[name].append(
-                max(detectable_distances)
-            )
-        else:
-            results[name].append(np.nan)
+        results[name].append(
+            detection_range
+        )
 
 
 # --------------------------------------------------
@@ -114,16 +186,28 @@ plt.show()
 
 print("\nMaximum detectable distance:")
 
-for spacing_target in [0.01, 0.02, 0.05, 0.1, 0.2, 0.5, 1.0]:
+for spacing_target in [
+    0.01,
+    0.02,
+    0.05,
+    0.1,
+    0.2,
+    0.5,
+    1.0
+]:
 
     index = np.argmin(
         np.abs(spacings - spacing_target)
     )
 
-    print(f"\nSpacing: {spacings[index]:.3f} m")
+    print(
+        f"\nSpacing: "
+        f"{spacings[index]:.4f} m"
+    )
 
     for name in orientations:
+
         print(
             f"  {name}: "
-            f"{results[name][index]:.3f} m"
+            f"{results[name][index]:.4f} m"
         )
