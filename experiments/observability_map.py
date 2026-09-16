@@ -10,6 +10,7 @@ from src.array import create_planar_array
 # --------------------------------------------------
 
 sensor_spacing = 0.10  # meters
+
 sensor_positions = create_planar_array(
     rows=3,
     cols=3,
@@ -22,11 +23,14 @@ moment = np.array([
     1.0
 ])
 
-# Source position range
+detection_threshold = 10e-9  # 10 nT
+
+# Conditioning threshold used only for visualization
+condition_threshold = 100.0
+
 x_values = np.linspace(-0.5, 0.5, 51)
 y_values = np.linspace(-0.5, 0.5, 51)
 
-# Depth slices
 z_values = [
     0.10,
     0.20,
@@ -103,7 +107,7 @@ def numerical_jacobian(position, moment):
 
 
 # --------------------------------------------------
-# Calculate observability map
+# Calculate maps
 # --------------------------------------------------
 
 for z in z_values:
@@ -118,9 +122,22 @@ for z in z_values:
         np.nan
     )
 
-    rank_map = np.zeros(
+    max_field_map = np.zeros(
         (len(y_values), len(x_values))
     )
+
+    detectable_map = np.zeros(
+        (len(y_values), len(x_values))
+    )
+
+    observable_map = np.zeros(
+        (len(y_values), len(x_values))
+    )
+
+
+    # --------------------------------------------------
+    # Sweep source position
+    # --------------------------------------------------
 
     for iy, y in enumerate(y_values):
 
@@ -131,6 +148,32 @@ for z in z_values:
                 y,
                 z
             ])
+
+            # ------------------------------------------
+            # Magnetic field
+            # ------------------------------------------
+
+            Bz = measurements(
+                position,
+                moment
+            )
+
+            max_field = np.max(
+                np.abs(Bz)
+            )
+
+            max_field_map[iy, ix] = max_field
+
+            detectable = (
+                max_field >= detection_threshold
+            )
+
+            detectable_map[iy, ix] = detectable
+
+
+            # ------------------------------------------
+            # Jacobian
+            # ------------------------------------------
 
             J = numerical_jacobian(
                 position,
@@ -156,24 +199,33 @@ for z in z_values:
                 compute_uv=False
             )
 
-            rank = np.linalg.matrix_rank(J)
+            condition_number = (
+                singular_values[0]
+                / singular_values[-1]
+            )
 
-            rank_map[iy, ix] = rank
+            condition_map[iy, ix] = condition_number
 
-            if rank == 6:
+            smallest_sv_map[iy, ix] = (
+                singular_values[-1]
+            )
 
-                condition_map[iy, ix] = (
-                    singular_values[0]
-                    / singular_values[-1]
-                )
 
-                smallest_sv_map[iy, ix] = (
-                    singular_values[-1]
-                )
+            # ------------------------------------------
+            # Combined practical observability
+            # ------------------------------------------
+
+            well_conditioned = (
+                condition_number <= condition_threshold
+            )
+
+            observable_map[iy, ix] = (
+                detectable and well_conditioned
+            )
 
 
     # --------------------------------------------------
-    # Condition number map
+    # Condition number
     # --------------------------------------------------
 
     plt.figure(figsize=(8, 6))
@@ -213,7 +265,7 @@ for z in z_values:
 
 
     # --------------------------------------------------
-    # Smallest singular value map
+    # Smallest singular value
     # --------------------------------------------------
 
     plt.figure(figsize=(8, 6))
@@ -253,13 +305,15 @@ for z in z_values:
 
 
     # --------------------------------------------------
-    # Rank map
+    # Maximum |Bz| / detection threshold
     # --------------------------------------------------
 
     plt.figure(figsize=(8, 6))
 
     image = plt.imshow(
-        rank_map,
+        np.log10(
+            max_field_map / detection_threshold
+        ),
         extent=[
             x_values[0],
             x_values[-1],
@@ -274,19 +328,156 @@ for z in z_values:
     plt.ylabel("Source y position (m)")
 
     plt.title(
-        f"Jacobian Rank at z = {z:.2f} m"
+        f"Maximum Sensor |Bz| Relative to Detection Threshold at z = {z:.2f} m"
     )
 
     plt.colorbar(
         image,
-        label="Rank"
+        label=r"$\log_{10}(|B_z|_\mathrm{max}/B_\mathrm{threshold})$"
     )
 
     plt.tight_layout()
 
     plt.savefig(
-        f"observability_rank_z{z:.2f}.png",
+        f"detectability_z{z:.2f}.png",
         dpi=300
     )
 
     plt.show()
+
+
+    # --------------------------------------------------
+    # Detectability mask
+    # --------------------------------------------------
+
+    plt.figure(figsize=(8, 6))
+
+    image = plt.imshow(
+        detectable_map,
+        extent=[
+            x_values[0],
+            x_values[-1],
+            y_values[0],
+            y_values[-1]
+        ],
+        origin="lower",
+        aspect="equal"
+    )
+
+    plt.xlabel("Source x position (m)")
+    plt.ylabel("Source y position (m)")
+
+    plt.title(
+        f"Detection Region at z = {z:.2f} m"
+    )
+
+    plt.colorbar(
+        image,
+        label="Detectable (1 = yes)"
+    )
+
+    plt.tight_layout()
+
+    plt.savefig(
+        f"detection_region_z{z:.2f}.png",
+        dpi=300
+    )
+
+    plt.show()
+
+
+    # --------------------------------------------------
+    # Combined practical observability
+    # --------------------------------------------------
+
+    plt.figure(figsize=(8, 6))
+
+    image = plt.imshow(
+        observable_map,
+        extent=[
+            x_values[0],
+            x_values[-1],
+            y_values[0],
+            y_values[-1]
+        ],
+        origin="lower",
+        aspect="equal"
+    )
+
+    plt.xlabel("Source x position (m)")
+    plt.ylabel("Source y position (m)")
+
+    plt.title(
+        f"Detectable + Well-Conditioned Region at z = {z:.2f} m"
+    )
+
+    plt.colorbar(
+        image,
+        label=f"Observable (κ ≤ {condition_threshold:.0f})"
+    )
+
+    plt.tight_layout()
+
+    plt.savefig(
+        f"practical_observability_z{z:.2f}.png",
+        dpi=300
+    )
+
+    plt.show()
+
+
+    # --------------------------------------------------
+    # Print summary
+    # --------------------------------------------------
+
+    total_points = observable_map.size
+
+    detectable_fraction = (
+        np.sum(detectable_map)
+        / total_points
+    )
+
+    observable_fraction = (
+        np.sum(observable_map)
+        / total_points
+    )
+
+    print()
+    print(f"z = {z:.2f} m")
+    print(
+        f"  Detectable area fraction: "
+        f"{detectable_fraction:.3f}"
+    )
+    print(
+        f"  Detectable + well-conditioned: "
+        f"{observable_fraction:.3f}"
+    )
+
+    # --------------------------------------------------
+    # Best-conditioned location
+    # --------------------------------------------------
+
+    valid = np.isfinite(condition_map)
+
+    best_index = np.unravel_index(
+        np.nanargmin(condition_map),
+        condition_map.shape
+    )
+
+    best_y_index, best_x_index = best_index
+
+    best_x = x_values[best_x_index]
+    best_y = y_values[best_y_index]
+
+    best_condition = condition_map[best_index]
+    best_smallest_sv = smallest_sv_map[best_index]
+
+    print()
+    print(f"z = {z:.2f} m")
+    print(f"  Best condition number: {best_condition:.3f}")
+    print(f"  Best location: x = {best_x:.3f} m, y = {best_y:.3f} m")
+    print(f"  Smallest singular value there: {best_smallest_sv:.6e}")
+    print(
+        f"  Detectable area fraction: "
+        f"{np.mean(detectable_map):.3f}"
+    )
