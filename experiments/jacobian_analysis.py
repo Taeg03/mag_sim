@@ -249,3 +249,42 @@ for i, vector in enumerate(Vt):
             f"  {name:>2}: "
             f"{value:+.4f}"
         )
+
+# --------------------------------------------------
+# Normalize Jacobian by characteristic parameter scales
+# --------------------------------------------------
+
+parameter_scales = np.array([
+    source_distance,
+    source_distance,
+    source_distance,
+    np.linalg.norm(moment),
+    np.linalg.norm(moment),
+    np.linalg.norm(moment)
+])
+
+J_normalized = J * parameter_scales[None, :]
+
+_, normalized_singular_values, _ = np.linalg.svd(
+    J_normalized,
+    full_matrices=False
+)
+
+normalized_condition_number = (
+    normalized_singular_values[0]
+    / normalized_singular_values[-1]
+)
+
+print("\nNormalized singular values:")
+
+for i, value in enumerate(normalized_singular_values):
+
+    print(
+        f"  σ{i + 1}: "
+        f"{value:.6e}"
+    )
+
+print(
+    f"\nNormalized condition number: "
+    f"{normalized_condition_number:.6e}"
+)
