@@ -21,14 +21,21 @@ array_position = np.array([0.0, 0.0, 0.0])
 
 # Reference source
 reference_position = np.array([0.0, 0.0, 0.50])
-reference_magnitude = 1.0
+reference_moment = np.array([0.0, 0.0, 1.0])
 
-# Candidate search region
+
+# Candidate source positions
 position_values = np.linspace(-0.50, 0.50, 21)
 
-# Moment orientation grid
+# Candidate moment orientations
 theta_values = np.linspace(0, np.pi, 19)
 phi_values = np.linspace(0, 2 * np.pi, 36, endpoint=False)
+
+# Candidate moment magnitudes
+moment_magnitudes = np.linspace(0.25, 2.0, 15)
+
+# Don't accept candidates too close to the reference
+minimum_position_difference = 0.05
 
 
 # ============================================================
@@ -42,10 +49,11 @@ sensor_world = transform_sensors(
 
 
 # ============================================================
-# Dipole measurement
+# Measurement
 # ============================================================
 
 def get_bz(position, moment):
+
     B = dipole_field(
         sensor_world,
         np.asarray(position),
@@ -59,61 +67,39 @@ def get_bz(position, moment):
 # Moment orientations
 # ============================================================
 
-def generate_moments():
+def generate_moment_directions():
 
-    moments = []
+    directions = []
 
     for theta in theta_values:
         for phi in phi_values:
 
-            mx = np.sin(theta) * np.cos(phi)
-            my = np.sin(theta) * np.sin(phi)
-            mz = np.cos(theta)
+            direction = np.array([
+                np.sin(theta) * np.cos(phi),
+                np.sin(theta) * np.sin(phi),
+                np.cos(theta)
+            ])
 
-            moments.append(
-                np.array([mx, my, mz]) * reference_magnitude
-            )
+            directions.append(direction)
 
-    return moments
-
-
-# ============================================================
-# Normalize measurement pattern
-# ============================================================
-
-def normalize(v):
-
-    norm = np.linalg.norm(v)
-
-    if norm == 0:
-        return v
-
-    return v / norm
+    return directions
 
 
 # ============================================================
 # Reference measurement
 # ============================================================
 
-reference_moment = np.array([
-    0.0,
-    0.0,
-    reference_magnitude
-])
-
 reference_bz = get_bz(
     reference_position,
     reference_moment
 )
-
-reference_pattern = normalize(reference_bz)
 
 
 # ============================================================
 # Search candidates
 # ============================================================
 
-moments = generate_moments()
+moment_directions = generate_moment_directions()
 
 best = []
 
@@ -126,39 +112,48 @@ for x in position_values:
             reference_position[2]
         ])
 
-        # Skip the reference position
-        if np.linalg.norm(
+        position_difference = np.linalg.norm(
             candidate_position - reference_position
-        ) < 1e-9:
+        )
+
+        if position_difference < minimum_position_difference:
             continue
 
-        for moment in moments:
+        for direction in moment_directions:
 
-            candidate_bz = get_bz(
-                candidate_position,
-                moment
-            )
+            for magnitude in moment_magnitudes:
 
-            candidate_pattern = normalize(
-                candidate_bz
-            )
+                candidate_moment = (
+                    direction * magnitude
+                )
 
-            # Pattern similarity
-            error = np.linalg.norm(
-                candidate_pattern - reference_pattern
-            )
+                candidate_bz = get_bz(
+                    candidate_position,
+                    candidate_moment
+                )
 
-            position_difference = np.linalg.norm(
-                candidate_position - reference_position
-            )
+                # Absolute measurement error
+                residual = candidate_bz - reference_bz
 
-            best.append((
-                error,
-                position_difference,
-                candidate_position.copy(),
-                moment.copy(),
-                candidate_bz.copy()
-            ))
+                rmse = np.sqrt(
+                    np.mean(residual ** 2)
+                )
+
+                # Relative RMSE
+                reference_rms = np.sqrt(
+                    np.mean(reference_bz ** 2)
+                )
+
+                relative_rmse = rmse / reference_rms
+
+                best.append((
+                    relative_rmse,
+                    rmse,
+                    position_difference,
+                    candidate_position.copy(),
+                    candidate_moment.copy(),
+                    candidate_bz.copy()
+                ))
 
 
 # ============================================================
@@ -169,12 +164,12 @@ best.sort(key=lambda x: x[0])
 
 
 # ============================================================
-# Print best candidates
+# Print results
 # ============================================================
 
 print()
 print("=" * 70)
-print("STATIC ARRAY AMBIGUITY SEARCH")
+print("STATIC ARRAY ABSOLUTE-MEASUREMENT AMBIGUITY SEARCH")
 print("=" * 70)
 
 print()
@@ -183,15 +178,28 @@ print(f"  Position: {reference_position}")
 print(f"  Moment:   {reference_moment}")
 print()
 
+print("Reference Bz measurements (nT):")
+print(reference_bz * 1e9)
+print()
+
 print("Closest candidates:")
 print()
 
 for i, result in enumerate(best[:10]):
 
-    error, position_difference, position, moment, bz = result
+    (
+        relative_rmse,
+        rmse,
+        position_difference,
+        position,
+        moment,
+        bz
+    ) = result
 
     print(f"Candidate {i + 1}")
-    print(f"  Pattern error:       {error:.6e}")
+    print(f"  Relative RMSE:       {relative_rmse:.6e}")
+    print(f"  Absolute RMSE:       {rmse:.6e} T")
+    print(f"  Absolute RMSE:       {rmse * 1e9:.6f} nT")
     print(f"  Position difference: {position_difference:.4f} m")
     print(f"  Position:            {position}")
     print(f"  Moment:              {moment}")
@@ -204,19 +212,32 @@ for i, result in enumerate(best[:10]):
 
 best_result = best[0]
 
-error, position_difference, candidate_position, candidate_moment, candidate_bz = best_result
+(
+    relative_rmse,
+    rmse,
+    position_difference,
+    candidate_position,
+    candidate_moment,
+    candidate_bz
+) = best_result
+
 
 figure_dir = "figures/find_static_ambiguity"
 os.makedirs(figure_dir, exist_ok=True)
 
 np.savez(
     f"{figure_dir}/ambiguity_pair.npz",
+
     reference_position=reference_position,
     reference_moment=reference_moment,
     reference_bz=reference_bz,
+
     candidate_position=candidate_position,
     candidate_moment=candidate_moment,
-    candidate_bz=candidate_bz
+    candidate_bz=candidate_bz,
+
+    relative_rmse=relative_rmse,
+    absolute_rmse=rmse
 )
 
 print()
