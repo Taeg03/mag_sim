@@ -1,5 +1,6 @@
 import os
 import numpy as np
+import matplotlib.pyplot as plt
 
 from src.dipole import dipole_field
 from src.array import transform_sensors
@@ -23,18 +24,11 @@ array_position = np.array([0.0, 0.0, 0.0])
 reference_position = np.array([0.0, 0.0, 0.50])
 reference_moment = np.array([0.0, 0.0, 1.0])
 
+# Search region
+x_values = np.linspace(-0.50, 0.50, 101)
+y_values = np.linspace(-0.50, 0.50, 101)
 
-# Candidate source positions
-position_values = np.linspace(-0.50, 0.50, 21)
-
-# Candidate moment orientations
-theta_values = np.linspace(0, np.pi, 19)
-phi_values = np.linspace(0, 2 * np.pi, 36, endpoint=False)
-
-# Candidate moment magnitudes
-moment_magnitudes = np.linspace(0.25, 2.0, 15)
-
-# Don't accept candidates too close to the reference
+# Don't consider positions too close to reference
 minimum_position_difference = 0.05
 
 
@@ -49,40 +43,18 @@ sensor_world = transform_sensors(
 
 
 # ============================================================
-# Measurement
+# Field model
 # ============================================================
 
 def get_bz(position, moment):
 
     B = dipole_field(
         sensor_world,
-        np.asarray(position),
-        np.asarray(moment)
+        position,
+        moment
     )
 
     return B[:, 2]
-
-
-# ============================================================
-# Moment orientations
-# ============================================================
-
-def generate_moment_directions():
-
-    directions = []
-
-    for theta in theta_values:
-        for phi in phi_values:
-
-            direction = np.array([
-                np.sin(theta) * np.cos(phi),
-                np.sin(theta) * np.sin(phi),
-                np.cos(theta)
-            ])
-
-            directions.append(direction)
-
-    return directions
 
 
 # ============================================================
@@ -94,73 +66,99 @@ reference_bz = get_bz(
     reference_moment
 )
 
+reference_rms = np.sqrt(
+    np.mean(reference_bz ** 2)
+)
+
 
 # ============================================================
-# Search candidates
+# Build moment response matrix
 # ============================================================
 
-moment_directions = generate_moment_directions()
+def moment_matrix(position):
+    """
+    Construct A such that:
 
-best = []
+        Bz = A @ m
 
-for x in position_values:
-    for y in position_values:
+    where m = [mx, my, mz].
+    """
 
-        candidate_position = np.array([
+    A = np.zeros((len(sensor_world), 3))
+
+    for i in range(3):
+
+        moment = np.zeros(3)
+        moment[i] = 1.0
+
+        A[:, i] = get_bz(
+            position,
+            moment
+        )
+
+    return A
+
+
+# ============================================================
+# Search
+# ============================================================
+
+errors = []
+best = None
+
+for x in x_values:
+    for y in y_values:
+
+        position = np.array([
             x,
             y,
             reference_position[2]
         ])
 
         position_difference = np.linalg.norm(
-            candidate_position - reference_position
+            position - reference_position
         )
 
         if position_difference < minimum_position_difference:
             continue
 
-        for direction in moment_directions:
+        A = moment_matrix(position)
 
-            for magnitude in moment_magnitudes:
+        # Best-fit magnetic moment
+        moment, _, _, _ = np.linalg.lstsq(
+            A,
+            reference_bz,
+            rcond=None
+        )
 
-                candidate_moment = (
-                    direction * magnitude
-                )
+        predicted_bz = A @ moment
 
-                candidate_bz = get_bz(
-                    candidate_position,
-                    candidate_moment
-                )
+        residual = predicted_bz - reference_bz
 
-                # Absolute measurement error
-                residual = candidate_bz - reference_bz
+        rmse = np.sqrt(
+            np.mean(residual ** 2)
+        )
 
-                rmse = np.sqrt(
-                    np.mean(residual ** 2)
-                )
+        relative_rmse = rmse / reference_rms
 
-                # Relative RMSE
-                reference_rms = np.sqrt(
-                    np.mean(reference_bz ** 2)
-                )
+        errors.append((
+            relative_rmse,
+            rmse,
+            position_difference,
+            position.copy(),
+            moment.copy(),
+            predicted_bz.copy()
+        ))
 
-                relative_rmse = rmse / reference_rms
-
-                best.append((
-                    relative_rmse,
-                    rmse,
-                    position_difference,
-                    candidate_position.copy(),
-                    candidate_moment.copy(),
-                    candidate_bz.copy()
-                ))
+        if best is None or relative_rmse < best[0]:
+            best = errors[-1]
 
 
 # ============================================================
-# Sort candidates
+# Sort results
 # ============================================================
 
-best.sort(key=lambda x: x[0])
+errors.sort(key=lambda x: x[0])
 
 
 # ============================================================
@@ -169,23 +167,23 @@ best.sort(key=lambda x: x[0])
 
 print()
 print("=" * 70)
-print("STATIC ARRAY ABSOLUTE-MEASUREMENT AMBIGUITY SEARCH")
+print("STATIC ARRAY BEST-FIT MOMENT AMBIGUITY SEARCH")
 print("=" * 70)
 
 print()
 print("Reference:")
 print(f"  Position: {reference_position}")
 print(f"  Moment:   {reference_moment}")
-print()
 
+print()
 print("Reference Bz measurements (nT):")
 print(reference_bz * 1e9)
-print()
 
+print()
 print("Closest candidates:")
 print()
 
-for i, result in enumerate(best[:10]):
+for i, result in enumerate(errors[:10]):
 
     (
         relative_rmse,
@@ -193,24 +191,108 @@ for i, result in enumerate(best[:10]):
         position_difference,
         position,
         moment,
-        bz
+        predicted_bz
     ) = result
 
     print(f"Candidate {i + 1}")
     print(f"  Relative RMSE:       {relative_rmse:.6e}")
-    print(f"  Absolute RMSE:       {rmse:.6e} T")
     print(f"  Absolute RMSE:       {rmse * 1e9:.6f} nT")
     print(f"  Position difference: {position_difference:.4f} m")
     print(f"  Position:            {position}")
-    print(f"  Moment:              {moment}")
+    print(f"  Best-fit moment:     {moment}")
+    print(f"  Moment magnitude:    {np.linalg.norm(moment):.6f}")
     print()
 
 
 # ============================================================
-# Save best candidate
+# Build error map
 # ============================================================
 
-best_result = best[0]
+error_map = np.full(
+    (len(y_values), len(x_values)),
+    np.nan
+)
+
+for result in errors:
+
+    relative_rmse, _, _, position, _, _ = result
+
+    ix = np.argmin(
+        np.abs(x_values - position[0])
+    )
+
+    iy = np.argmin(
+        np.abs(y_values - position[1])
+    )
+
+    error_map[iy, ix] = relative_rmse
+
+
+# ============================================================
+# Output directory
+# ============================================================
+
+figure_dir = "figures/find_static_ambiguity"
+os.makedirs(figure_dir, exist_ok=True)
+
+
+# ============================================================
+# Plot residual map
+# ============================================================
+
+plt.figure(figsize=(8, 6))
+
+plt.imshow(
+    error_map,
+    extent=[
+        x_values[0],
+        x_values[-1],
+        y_values[0],
+        y_values[-1]
+    ],
+    origin="lower",
+    aspect="equal"
+)
+
+plt.colorbar(
+    label="Relative RMSE"
+)
+
+plt.scatter(
+    reference_position[0],
+    reference_position[1],
+    marker="x",
+    s=100,
+    label="Reference"
+)
+
+plt.scatter(
+    best[3][0],
+    best[3][1],
+    marker="o",
+    facecolors="none",
+    edgecolors="black",
+    s=100,
+    label="Best candidate"
+)
+
+plt.xlabel("Source x position (m)")
+plt.ylabel("Source y position (m)")
+plt.title("Static Array Ambiguity")
+plt.legend()
+plt.tight_layout()
+
+plt.savefig(
+    f"{figure_dir}/static_ambiguity_map.png",
+    dpi=200
+)
+
+plt.close()
+
+
+# ============================================================
+# Save best pair
+# ============================================================
 
 (
     relative_rmse,
@@ -219,11 +301,7 @@ best_result = best[0]
     candidate_position,
     candidate_moment,
     candidate_bz
-) = best_result
-
-
-figure_dir = "figures/find_static_ambiguity"
-os.makedirs(figure_dir, exist_ok=True)
+) = best
 
 np.savez(
     f"{figure_dir}/ambiguity_pair.npz",
@@ -241,5 +319,5 @@ np.savez(
 )
 
 print()
-print(f"Best candidate saved to:")
-print(f"  {figure_dir}/ambiguity_pair.npz")
+print(f"Figures saved to: {figure_dir}/")
+print(f"Best pair saved to: {figure_dir}/ambiguity_pair.npz")
