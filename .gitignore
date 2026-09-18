@@ -1,2 +1,3 @@
 .venv
 ref
+/src/__pycache__
