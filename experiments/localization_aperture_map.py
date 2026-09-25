@@ -1,3 +1,4 @@
+import os
 import numpy as np
 import matplotlib.pyplot as plt
 
@@ -218,7 +219,9 @@ def main():
 
         plt.tight_layout()
 
-        filename = f"localization_z_{z:.2f}.png"
+        figure_dir = "figures/localization_aperture_map"
+        os.makedirs(figure_dir, exist_ok=True)
+        filename = f"{figure_dir}/localization_z_{z:.2f}.png"
         plt.savefig(filename, dpi=200)
         plt.show()
 

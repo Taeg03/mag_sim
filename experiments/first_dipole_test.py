@@ -24,4 +24,4 @@ B = dipole_field(sensor, dipole1, moment)
 
 print("Magnetic field vector (Tesla):")
 print(B)
-print("Shape:", B.shape)  # (1, 3)
+print("Shape:", B.shape)  # (9, 3)

@@ -1,3 +1,4 @@
+import os
 import numpy as np
 import matplotlib.pyplot as plt
 
@@ -142,8 +143,11 @@ plt.grid(True)
 
 plt.tight_layout()
 
+figure_dir = "figures/operating_range"
+os.makedirs(figure_dir, exist_ok=True)
+
 plt.savefig(
-    "orientation_detection_range.png",
+    f"{figure_dir}/orientation_detection_range.png",
     dpi=300
 )
 
@@ -178,15 +182,19 @@ plt.colorbar(
     label=r"$\log_{10}(|B_z| / B_{\mathrm{threshold}})$"
 )
 
-plt.axhline(
-    0,
-    linestyle="--"
+plt.contour(
+    distances,
+    angles,
+    np.log10(field_ratio),
+    levels=[0],
+    colors="black",
+    linestyles="--"
 )
 
 plt.tight_layout()
 
 plt.savefig(
-    "orientation_field_ratio.png",
+    f"{figure_dir}/orientation_field_ratio.png",
     dpi=300
 )
 

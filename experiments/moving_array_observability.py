@@ -161,8 +161,20 @@ def analyze(name, trajectory):
 
     J = stacked_jacobian(trajectory)
 
+    # Normalize by characteristic parameter scales (consistent with jacobian_analysis.py)
+    parameter_scales = np.array([
+        source_position[2],
+        source_position[2],
+        source_position[2],
+        np.linalg.norm(moment),
+        np.linalg.norm(moment),
+        np.linalg.norm(moment)
+    ])
+
+    J_normalized = J * parameter_scales[None, :]
+
     singular_values = np.linalg.svd(
-        J,
+        J_normalized,
         compute_uv=False
     )
 
@@ -180,9 +192,9 @@ def analyze(name, trajectory):
     print(f"Number of measurements: {J.shape[0]}")
     print(f"Jacobian shape:        {J.shape}")
     print(f"Rank:                  {rank}")
-    print(f"Condition number:      {condition_number:.6e}")
+    print(f"Normalized condition number: {condition_number:.6e}")
     print()
-    print("Singular values:")
+    print("Normalized singular values:")
     for i, s in enumerate(singular_values):
         print(f"  σ{i + 1}: {s:.6e}")
 
@@ -224,8 +236,7 @@ singular_values = np.array([
     for label in labels
 ])
 
-x = np.arange(6)
-width = 0.25
+x = np.arange(1, 7)
 
 plt.figure(figsize=(9, 5))
 
@@ -239,12 +250,12 @@ for i, label in enumerate(labels):
 
 plt.xticks(
     x,
-    ["x", "y", "z", "mx", "my", "mz"]
+    [r"$\sigma_1$", r"$\sigma_2$", r"$\sigma_3$", r"$\sigma_4$", r"$\sigma_5$", r"$\sigma_6$"]
 )
 
-plt.xlabel("Parameter")
-plt.ylabel("Singular value")
-plt.title("Six-Parameter Observability")
+plt.xlabel("Singular Value Index")
+plt.ylabel("Normalized singular value")
+plt.title("Six-Parameter Observability (Normalized Singular Values)")
 plt.grid(True, which="both", alpha=0.3)
 plt.legend()
 plt.tight_layout()
@@ -275,8 +286,8 @@ plt.bar(
 
 plt.yscale("log")
 
-plt.ylabel("Condition number")
-plt.title("Jacobian Conditioning")
+plt.ylabel("Normalized condition number")
+plt.title("Normalized Jacobian Conditioning")
 plt.grid(True, axis="y", which="both", alpha=0.3)
 plt.tight_layout()
 

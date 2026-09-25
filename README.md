@@ -185,6 +185,42 @@ The color classes are the combined detection and conditioning result:
 
 These are the most complete spatial figures because they show where a source can both produce a measurable signal and be estimated reliably. The moment magnitude and depth are encoded in each filename.
 
+### `aperture_depth_ratio_sweep.py`
+
+Output directory: `figures/aperture_depth_ratio_sweep/`
+
+- `aperture_depth_median_uncertainty.png`: median 1-sigma 3D position uncertainty versus aperture-to-depth ratio $L/z$.
+- `aperture_depth_p90_uncertainty.png`: 90th percentile position uncertainty versus $L/z$.
+
+These plots evaluate Cramer-Rao lower bounds on 3D source localization error, confirming that normalized localization sensitivity is scale-invariant with respect to $L/z$.
+
+### `localization_aperture_map.py`
+
+Output directory: `figures/localization_aperture_map/`
+
+- `localization_z*.png`: 2D lateral heatmaps comparing 3D position uncertainty across physical array apertures ($L = 0.05$ to $0.80\text{ m}$) at fixed source depth $z$. Contours mark 5 cm and 10 cm uncertainty thresholds.
+
+### `find_static_ambiguity.py`
+
+Output directory: `figures/find_static_ambiguity/`
+
+- `static_ambiguity_map.png`: heatmap of relative residual RMSE across candidate source locations when fitting the best magnetic moment to match a centered vertical dipole.
+- `ambiguity_pair.npz`: saved reference and candidate dipole parameters demonstrating sub-threshold (3.07 nT) measurement residuals.
+
+### `motion_breaks_ambiguity.py`
+
+Output directory: `figures/motion_breaks_ambiguity/`
+
+- `measurement_separation.png`: measurement RMSE between the statically ambiguous dipole pair as the array translates laterally.
+- `sensor_measurements.png`: individual sensor traces demonstrating how array motion breaks static degeneracy.
+
+### `moving_array_observability.py`
+
+Output directory: `figures/moving_array_observability/`
+
+- `singular_values.png`: normalized singular values $\sigma_1$ through $\sigma_6$ for static, z-translation, and x-translation array trajectories.
+- `condition_numbers.png`: comparison of normalized Jacobian condition numbers across motion modes.
+
 ## How to Read the Results
 
 - Detection plots answer: is the magnetic signal large enough?
@@ -193,6 +229,7 @@ These are the most complete spatial figures because they show where a source can
 - Aperture and spacing studies answer: how should the sensor geometry be designed?
 - Moment and orientation studies answer: how do source strength and orientation change the operating envelope?
 - Sensing-volume plots answer: where is the source both detectable and reliably estimable?
+- Ambiguity and motion studies answer: can static degeneracies be resolved by synthetic aperture movement?
 
 ## Experiments Without Current Figure Outputs
 
@@ -201,4 +238,5 @@ The following scripts are present but do not currently correspond to saved figur
 - `first_dipole_test.py`
 - `noise_test.py`
 - `localization_accuracy.py`
+
 

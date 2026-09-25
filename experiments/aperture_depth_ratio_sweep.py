@@ -1,3 +1,4 @@
+import os
 import numpy as np
 import matplotlib.pyplot as plt
 
@@ -257,11 +258,14 @@ def main():
     plt.xlabel("Aperture / source depth (L/z)")
     plt.ylabel("Median 1σ position uncertainty (cm)")
     plt.title("Localization sensitivity vs aperture-to-depth ratio")
+    figure_dir = "figures/aperture_depth_ratio_sweep"
+    os.makedirs(figure_dir, exist_ok=True)
+
     plt.grid(True, which="both")
     plt.legend()
     plt.tight_layout()
     plt.savefig(
-        "aperture_depth_median_uncertainty.png",
+        f"{figure_dir}/aperture_depth_median_uncertainty.png",
         dpi=200
     )
     plt.show()
@@ -298,7 +302,7 @@ def main():
     plt.legend()
     plt.tight_layout()
     plt.savefig(
-        "aperture_depth_p90_uncertainty.png",
+        f"{figure_dir}/aperture_depth_p90_uncertainty.png",
         dpi=200
     )
     plt.show()
