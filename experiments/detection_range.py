@@ -49,17 +49,32 @@ else:
 # Plot
 plt.figure()
 
-plt.loglog(distances, center_bz)
-plt.axhline(detection_limit, linestyle="--")
+plt.loglog(distances, center_bz, label=r"$|B_z|$ at Center Sensor")
+plt.axhline(detection_limit, linestyle="--", color="gray", label=f"Detection Limit ({detection_limit * 1e9:.0f} nT)")
+
+if np.any(above_limit):
+    plt.plot(
+        max_detectable_distance,
+        detection_limit,
+        marker="o",
+        color="red",
+        markersize=6,
+        label=f"Max Range: {max_detectable_distance:.2f} m"
+    )
 
 plt.xlabel("Source distance (m)")
 plt.ylabel("|Bz| (T)")
 plt.title("Dipole Detection Range")
+plt.legend()
 
 plt.grid(True, which="both")
 
+import os
+figure_dir = "figures/detection_range"
+os.makedirs(figure_dir, exist_ok=True)
+
 plt.savefig(
-    "detection_range.png",
+    f"{figure_dir}/detection_range.png",
     dpi=300,
     bbox_inches="tight"
 )

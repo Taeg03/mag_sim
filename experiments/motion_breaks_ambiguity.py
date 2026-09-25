@@ -237,6 +237,14 @@ plt.xlabel("Array x position (m)")
 plt.ylabel("Bz (nT)")
 plt.title("Sensor Measurements During Array Translation")
 plt.grid(True, alpha=0.3)
+
+from matplotlib.lines import Line2D
+custom_lines = [
+    Line2D([0], [0], color="black", linestyle="-", label="Source A (centered vertical)"),
+    Line2D([0], [0], color="black", linestyle="--", label="Source B (off-center tilted)")
+]
+plt.legend(handles=custom_lines, loc="upper right")
+
 plt.tight_layout()
 
 plt.savefig(
