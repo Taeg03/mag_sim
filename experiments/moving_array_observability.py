@@ -254,8 +254,8 @@ plt.xticks(
 )
 
 plt.xlabel("Singular Value Index")
-plt.ylabel("Normalized singular value")
-plt.title("Six-Parameter Observability (Normalized Singular Values)")
+plt.ylabel("Singular value")
+plt.title("Multi-Pose Singular Values — Unnormalized Jacobian")
 plt.grid(True, which="both", alpha=0.3)
 plt.legend()
 plt.tight_layout()
