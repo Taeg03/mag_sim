@@ -17,48 +17,31 @@ The first frontend integration lives in `frontend/`. It keeps the canvas visuali
 in the browser while obtaining the nine sensor field values from the Python analytical
 dipole model.
 
-From the repository root, run:
+### View on the same computer
+
+From the repository root, start the server:
 
 ```bash
 ./.venv/bin/python -m frontend.server
 ```
 
-Then open <http://127.0.0.1:8000>. If port 8000 is already in use, choose another
-local port:
+Keep this terminal running, then open <http://127.0.0.1:8000> in a browser on the
+same computer. Stop the server with `Ctrl+C`.
+
+Port `8000` may already be used by another application. In that case, choose an
+available port:
 
 ```bash
 FRONTEND_PORT=8765 ./.venv/bin/python -m frontend.server
 ```
 
+Then open <http://127.0.0.1:8765>. The browser must use the same port as the
+server. Do not open `frontend/index.html` directly from the filesystem because
+the page needs the Python `/api/simulate` endpoint.
+
 This initial slice intentionally uses the ideal point-dipole backend. Magpylib,
 noise, localization, and finite-source options can be added behind the same API
 as later increments.
-
-### Access from another device with Tailscale
-
-The default server binding is loopback-only. To make the frontend reachable from
-another device on the Tailscale network, bind it to all interfaces:
-
-```bash
-FRONTEND_HOST=0.0.0.0 FRONTEND_PORT=8765 ./.venv/bin/python -m frontend.server
-```
-
-On the development machine, find its Tailscale IPv4 address:
-
-```bash
-tailscale ip -4
-```
-
-Then open `http://<tailscale-ip>:8765` from the Quest browser. This exposes the
-development server on the machine's interfaces, so the host firewall should allow
-TCP port 8765 only from the Tailscale interface/network. Alternatively, use SSH
-local forwarding to keep the server loopback-only:
-
-```bash
-ssh -N -L 8765:127.0.0.1:8765 <user>@<tailscale-ip>
-```
-
-In that mode, open `http://127.0.0.1:8765` on the device running SSH.
 
 ## Common Concepts
 
