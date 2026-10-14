@@ -13,3 +13,8 @@ def add_noise(measurements, noise_std):
     )
 
     return measurements + noise
+
+
+# Re-export configurable synthetic noise framework for sensor-level access
+from src.noise import NoiseConfig, SyntheticNoiseGenerator
+
