@@ -45,6 +45,7 @@ launch-xml==3.4.11
 launch-yaml==3.4.11
 lifecycle-msgs==2.0.4
 logging-demo==0.33.11
+magpylib==5.2.3
 map-msgs==2.4.1
 matplotlib==3.11.2
 message-filters==4.11.17
@@ -130,6 +131,7 @@ sensor-msgs==5.3.8
 sensor-msgs-py==5.3.8
 service-msgs==2.0.4
 shape-msgs==5.3.8
+scipy==1.18.1
 six==1.17.0
 sros2==0.13.6
 statistics-msgs==2.0.4
