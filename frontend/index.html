@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Magnetic Dipole Simulator</title>
+<style>
+  :root { --bg:#05070f; --panel:rgba(14,18,32,.82); --text:#dfe6ff; --muted:#8b97c4; --accent:#7aa2ff; }
+  * { box-sizing:border-box; }
+  html,body { height:100%; margin:0; overflow:hidden; background:var(--bg); color:var(--text);
+    font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; }
+  canvas { position:fixed; inset:0; width:100%; height:100%; display:block; }
+  .panel { position:fixed; left:50%; bottom:18px; transform:translateX(-50%); width:min(600px,calc(100% - 28px));
+    padding:12px 18px 10px; background:var(--panel); border:1px solid rgba(255,255,255,.1);
+    border-radius:16px; backdrop-filter:blur(10px); }
+  .row { display:grid; grid-template-columns:130px 1fr 88px; gap:12px; align-items:center;
+    margin:5px 0; font-size:14px; }
+  output { color:var(--accent); text-align:right; font-variant-numeric:tabular-nums; }
+  input { width:100%; accent-color:var(--accent); }
+  h1 { position:fixed; left:20px; top:16px; margin:0; font-size:15px; letter-spacing:.04em; }
+  h1 span { display:block; margin-top:4px; color:var(--muted); font-size:12px; font-weight:400; letter-spacing:0; }
+  .card { position:fixed; top:14px; right:14px; width:min(330px,calc(100% - 28px)); padding:12px;
+    background:var(--panel); border:1px solid rgba(255,255,255,.1); border-radius:16px; font-size:12px; line-height:1.5; }
+  .card b { font-size:13px; }
+  #status { color:var(--muted); margin-top:6px; }
+  .legend { margin-top:8px; color:var(--muted); }
+  .legend span { white-space:nowrap; margin-right:8px; }
+  .swatch { display:inline-block; width:9px; height:9px; border-radius:50%; margin-right:3px; }
+  .swatch.pos { background:#4ff3ff; } .swatch.neg { background:#ff5fd8; }
+  .check { display:flex; align-items:center; gap:8px; margin-top:8px; color:var(--muted); }
+  .check input { width:auto; }
+  @media (max-width:700px) { h1 { display:none; } .card { left:14px; right:14px; width:auto; } }
+</style>
+</head>
+<body>
+<canvas id="canvas"></canvas>
+<h1>Magnetic dipole field<span>Python analytical backend · drag to orbit</span></h1>
+<div class="card">
+  <b>Backend sensor state</b>
+  <div id="status">Connecting…</div>
+  <div class="legend">
+    <span><i class="swatch pos"></i>+Bz</span>
+    <span><i class="swatch neg"></i>-Bz</span>
+    <span>size = |Bz|</span>
+  </div>
+</div>
+<div class="panel">
+  <div class="row"><label for="moment">Moment |m|</label><input id="moment" type="range" min="0.1" max="5" step="0.1" value="1"><output id="momentValue"></output></div>
+  <div class="row"><label for="distance">Source distance</label><input id="distance" type="range" min="0.15" max="1.5" step="0.01" value="0.5"><output id="distanceValue"></output></div>
+  <div class="row"><label for="tilt">Axis tilt</label><input id="tilt" type="range" min="-90" max="90" value="0"><output id="tiltValue"></output></div>
+  <label class="check"><input id="animate" type="checkbox" checked> Animate source precession and camera</label>
+</div>
+<script>
+(() => {
+  const canvas = document.getElementById("canvas");
+  const ctx = canvas.getContext("2d");
+  const momentEl = document.getElementById("moment");
+  const distanceEl = document.getElementById("distance");
+  const tiltEl = document.getElementById("tilt");
+  const animateEl = document.getElementById("animate");
+  const statusEl = document.getElementById("status");
+  const particles = [];
+  let dpr = 1, width = 0, height = 0, yaw = .6, pitch = .35;
+  let dragging = false, lastX = 0, lastY = 0, latest = null, time = 0;
+
+  function resize() {
+    dpr = Math.min(devicePixelRatio || 1, 2);
+    width = innerWidth; height = innerHeight;
+    canvas.width = width * dpr; canvas.height = height * dpr;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+  addEventListener("resize", resize); resize();
+  for (let i = 0; i < 900; i++) {
+    const a = Math.random() * Math.PI * 2, r = .25 + Math.random() * 1.7;
+    particles.push({ x:Math.cos(a)*r, y:Math.sin(a)*r, z:(Math.random()-.5)*1.5 });
+  }
+
+  canvas.addEventListener("pointerdown", event => {
+    dragging = true; lastX = event.clientX; lastY = event.clientY;
+    canvas.setPointerCapture(event.pointerId);
+  });
+  canvas.addEventListener("pointerup", () => dragging = false);
+  canvas.addEventListener("pointermove", event => {
+    if (!dragging) return;
+    yaw += (event.clientX-lastX)*.006;
+    pitch = Math.max(-1.2, Math.min(1.2, pitch+(event.clientY-lastY)*.006));
+    lastX = event.clientX; lastY = event.clientY;
+  });
+
+  function sourceState() {
+    const distance = Number(distanceEl.value);
+    const theta = Number(tiltEl.value) * Math.PI / 180;
+    const phase = time * .22;
+    return {
+      position: [distance * Math.sin(.55) * Math.cos(phase),
+        distance * Math.sin(.55) * Math.sin(phase), distance * Math.cos(.55)],
+      moment: [Number(momentEl.value) * Math.sin(theta) * Math.cos(phase),
+        Number(momentEl.value) * Math.sin(theta) * Math.sin(phase),
+        Number(momentEl.value) * Math.cos(theta)]
+    };
+  }
+
+  async function updateBackend() {
+    const source = sourceState();
+    try {
+      const response = await fetch("/api/simulate", {
+        method:"POST", headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({ source_position:source.position, moment:source.moment, sensor_spacing:.10 })
+      });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      latest = await response.json();
+      const maxNt = latest.max_abs_bz_t * 1e9;
+      statusEl.innerHTML = `max |Bz|: <b>${maxNt.toPrecision(4)} nT</b><br>` +
+        `detectable: <b>${latest.detectable ? "yes" : "no"}</b><br>` +
+        `9 sensors · analytical dipole · 10 nT threshold`;
+    } catch (error) {
+      statusEl.textContent = `Backend unavailable: ${error.message}`;
+    }
+  }
+
+  function project(x, y, z, source) {
+    const cx = width/2, cy = height*.45, scale = Math.min(width,height)*.27/(1+.35*source[2]);
+    const x1=x*Math.cos(yaw)-y*Math.sin(yaw), y1=x*Math.sin(yaw)+y*Math.cos(yaw);
+    const y2=y1*Math.cos(pitch)-z*Math.sin(pitch), z2=y1*Math.sin(pitch)+z*Math.cos(pitch);
+    return [cx+x1*scale, cy-z2*scale];
+  }
+
+  function drawGrid(source) {
+    const extent = 1.5, step = .25;
+    ctx.lineWidth = 1;
+    for (let value=-extent; value<=extent+.001; value+=step) {
+      const x1=project(-extent,value,0,source), x2=project(extent,value,0,source);
+      const y1=project(value,-extent,0,source), y2=project(value,extent,0,source);
+      ctx.strokeStyle = Math.abs(value)<.001 ? "rgba(255,120,135,.55)" : "rgba(122,162,255,.14)";
+      ctx.beginPath(); ctx.moveTo(x1[0],x1[1]); ctx.lineTo(x2[0],x2[1]); ctx.stroke();
+      ctx.strokeStyle = Math.abs(value)<.001 ? "rgba(109,255,160,.55)" : "rgba(122,162,255,.14)";
+      ctx.beginPath(); ctx.moveTo(y1[0],y1[1]); ctx.lineTo(y2[0],y2[1]); ctx.stroke();
+    }
+    const origin=project(0,0,0,source);
+    for (const [end,color,label] of [
+      [[extent,0,0],"#ff7a85","x"], [[0,extent,0],"#6dffa0","y"], [[0,0,extent],"#7aa8ff","z"]
+    ]) {
+      const tip=project(end[0],end[1],end[2],source);
+      ctx.strokeStyle=color; ctx.lineWidth=1.5; ctx.beginPath();
+      ctx.moveTo(origin[0],origin[1]); ctx.lineTo(tip[0],tip[1]); ctx.stroke();
+      ctx.fillStyle=color; ctx.font="12px system-ui"; ctx.fillText(label,tip[0]+5,tip[1]-5);
+    }
+  }
+
+  function drawDipole(position, moment) {
+    const origin=project(position[0],position[1],position[2],position);
+    const glow=ctx.createRadialGradient(origin[0],origin[1],1,origin[0],origin[1],18);
+    glow.addColorStop(0,"rgba(255,255,255,.9)"); glow.addColorStop(1,"rgba(122,162,255,0)");
+    ctx.fillStyle=glow; ctx.beginPath(); ctx.arc(origin[0],origin[1],18,0,Math.PI*2); ctx.fill();
+    ctx.fillStyle="#ffffff"; ctx.beginPath(); ctx.arc(origin[0],origin[1],4,0,Math.PI*2); ctx.fill();
+    const norm=Math.hypot(...moment)||1, length=.16;
+    const tip=project(position[0]+moment[0]/norm*length,position[1]+moment[1]/norm*length,
+      position[2]+moment[2]/norm*length,position);
+    ctx.strokeStyle="#ff5a6e"; ctx.lineWidth=4; ctx.beginPath();
+    ctx.moveTo(origin[0],origin[1]); ctx.lineTo(tip[0],tip[1]); ctx.stroke();
+    ctx.fillStyle="#ffb86b"; ctx.font="12px system-ui"; ctx.fillText("dipole",origin[0]+8,origin[1]-8);
+  }
+
+  function draw(now) {
+    const dt = Math.min(.05, (now-(draw.last || now))/1000); draw.last=now;
+    if (animateEl.checked) time += dt;
+    if (animateEl.checked && !dragging) yaw += dt*.09;
+    const source = sourceState(), position = source.position, m = source.moment;
+    ctx.fillStyle="#05070f"; ctx.fillRect(0,0,width,height);
+    drawGrid(position);
+    ctx.globalAlpha=.42; ctx.strokeStyle="#7aa2ff"; ctx.lineWidth=1;
+    for (const particle of particles) {
+      const dx=particle.x, dy=particle.y, dz=particle.z, r2=dx*dx+dy*dy+dz*dz, r=Math.sqrt(r2);
+      const md=(m[0]*dx+m[1]*dy+m[2]*dz)/r2, inv=1/(r2*r);
+      const bx=(3*md*dx-m[0])*inv, by=(3*md*dy-m[1])*inv, bz=(3*md*dz-m[2])*inv;
+      const norm=Math.hypot(bx,by,bz)+1e-12, step=.012;
+      const next=[particle.x+bx/norm*step, particle.y+by/norm*step, particle.z+bz/norm*step];
+      const a=project(particle.x+position[0],particle.y+position[1],particle.z+position[2],position);
+      const b=project(next[0]+position[0],next[1]+position[1],next[2]+position[2],position);
+      ctx.beginPath(); ctx.moveTo(a[0],a[1]); ctx.lineTo(b[0],b[1]); ctx.stroke();
+      particle.x=next[0]; particle.y=next[1]; particle.z=next[2];
+      const radius = Math.hypot(particle.x,particle.y,particle.z);
+      if (radius<.2 || radius>2.1) {
+        const angle=Math.random()*Math.PI*2, radius=.3+Math.random()*1.5;
+        particle.x=Math.cos(angle)*radius; particle.y=Math.sin(angle)*radius; particle.z=(Math.random()-.5)*1.5;
+      }
+    }
+    ctx.globalAlpha=1;
+    drawDipole(position,m);
+    const origin=project(0,0,0,position), tip=project(position[0],position[1],position[2],position);
+    ctx.setLineDash([6,5]); ctx.strokeStyle="rgba(255,255,255,.7)"; ctx.beginPath(); ctx.moveTo(origin[0],origin[1]); ctx.lineTo(tip[0],tip[1]); ctx.stroke(); ctx.setLineDash([]);
+    if (latest) {
+      latest.sensor_positions_m.forEach((sensor,i) => {
+        const p=project(sensor[0],sensor[1],sensor[2],position), value=latest.bz_t[i], scale=Math.min(1,Math.abs(value)/latest.max_abs_bz_t);
+        ctx.fillStyle=value>=0?"#4ff3ff":"#ff5fd8"; ctx.beginPath(); ctx.arc(p[0],p[1],3+7*scale,0,Math.PI*2); ctx.fill();
+      });
+    }
+    requestAnimationFrame(draw);
+  }
+  for (const input of [momentEl,distanceEl,tiltEl]) input.addEventListener("input", () => {
+    document.getElementById(input.id+"Value").textContent = input.value + (input===momentEl ? " A·m²" : input===distanceEl ? " m" : "°");
+  });
+  [momentEl,distanceEl,tiltEl].forEach(input => input.dispatchEvent(new Event("input")));
+  setInterval(updateBackend, 100); updateBackend(); requestAnimationFrame(draw);
+})();
+</script>
+</body>
+</html>
